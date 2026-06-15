@@ -55,15 +55,54 @@ class JobStats(BaseModel):
 
 # --- Helper to create a single job ---
 def _create_job_db(db: Session, job_in: JobCreate, user_id: int) -> Job:
-    # Set timeout if needed (e.g. 1 hour from now)
-    # We can fetch priority rule if we want, but using input priority as default
+    from models.shared import Carteirinha, Convenio, UserConvenio
+
+    # Initialize parameters
+    p_dict = dict(job_in.params) if job_in.params else {}
+
+    # 1. Fetch patient and convenio details
+    target_conv_id = job_in.id_convenio
+    if job_in.carteirinha_id:
+        cart = db.query(Carteirinha).filter(Carteirinha.id == job_in.carteirinha_id).first()
+        if cart:
+            p_dict["Paciente"] = p_dict.get("Paciente") or cart.paciente or ""
+            p_dict["Carteira"] = p_dict.get("Carteira") or cart.carteirinha or ""
+            p_dict["TarjaMagnetica"] = p_dict.get("TarjaMagnetica") or getattr(cart, "tarja_magnetica", "") or ""
+            if not target_conv_id:
+                target_conv_id = cart.id_convenio
+
+            conv = db.query(Convenio).filter(Convenio.id_convenio == cart.id_convenio).first()
+            if conv:
+                p_dict["convenio"] = p_dict.get("convenio") or conv.nome or ""
+
+    # 2. Fetch user credentials for the convenio and inject into params
+    if target_conv_id:
+        uconv = db.query(UserConvenio).filter(
+            UserConvenio.user_id == user_id,
+            UserConvenio.id_convenio == target_conv_id
+        ).first()
+        if uconv:
+            p_dict["login"] = p_dict.get("login") or uconv.login
+            p_dict["senha_criptografada"] = p_dict.get("senha_criptografada") or uconv.senha_criptografada
+            p_dict["cod_prestador"] = p_dict.get("cod_prestador") or uconv.cod_prestador
+            p_dict["login_fat"] = p_dict.get("login_fat") or uconv.login_fat
+            p_dict["senha_fat_criptografada"] = p_dict.get("senha_fat_criptografada") or uconv.senha_fat_criptografada
+
+    # 3. Set strict_session_affinity (default True for Bradesco OP1 to avoid login conflicts)
+    is_bradesco_op1 = False
+    if target_conv_id == 1:
+        if job_in.rotina in ['1', 'op1_consulta', 'op1_fature', 'op0_login']:
+            is_bradesco_op1 = True
+    
+    p_dict["strict_session_affinity"] = p_dict.get("strict_session_affinity", is_bradesco_op1)
+
     db_job = Job(
         user_id=user_id,
         carteirinha_id=job_in.carteirinha_id,
         id_convenio=job_in.id_convenio,
         rotina=job_in.rotina,
         priority=job_in.priority,
-        params=job_in.params or {},
+        params=p_dict,
         status="pending",
         attempts=0,
         max_attempts=job_in.max_attempts,
