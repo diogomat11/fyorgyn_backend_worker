@@ -1,9 +1,29 @@
 import os
+import requests
+import logging
 from datetime import datetime, timezone
 from typing import Optional
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status, BackgroundTasks
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
+
+def send_webhook_task(webhook_url: str, payload: dict):
+    try:
+        headers = {"Content-Type": "application/json"}
+        # Add BPO authorization header if client provided a token in params
+        auth_token = (payload.get("params") or {}).get("bpo_webhook_token")
+        if auth_token:
+            headers["Authorization"] = f"Bearer {auth_token}"
+            
+        response = requests.post(webhook_url, json=payload, headers=headers, timeout=20)
+        if response.status_code in [200, 201, 204]:
+            logger.info(f"Webhook successfully delivered to {webhook_url} for job {payload.get('job_id')}")
+        else:
+            logger.warning(f"Webhook to {webhook_url} returned status code {response.status_code} for job {payload.get('job_id')}")
+    except Exception as e:
+        logger.error(f"Failed to deliver webhook to {webhook_url} for job {payload.get('job_id')}: {e}")
 
 from database import get_db
 from models.worker import Job, Log, Worker, JobExecution
@@ -73,6 +93,7 @@ async def worker_heartbeat(
 async def complete_job(
     job_id: int,
     req: JobCompleteRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     job = db.query(Job).filter(Job.id == job_id).first()
@@ -112,24 +133,42 @@ async def complete_job(
     db.add(log)
     
     db.commit()
+    
+    # Dispatch webhook if webhook_url is specified in params
+    if job.params and isinstance(job.params, dict):
+        webhook_url = job.params.get("webhook_url")
+        if webhook_url:
+            payload = {
+                "job_id": job.id,
+                "status": job.status,
+                "result_data": job.result_data,
+                "error_message": job.error_message,
+                "attempts": job.attempts,
+                "rotina": job.rotina,
+                "id_convenio": job.id_convenio,
+                "params": job.params
+            }
+            background_tasks.add_task(send_webhook_task, webhook_url, payload)
+            
     return {"message": f"Job {job_id} marcado como concluído com sucesso."}
 
 @router.post("/internal/jobs/{job_id}/fail", dependencies=[Depends(verify_internal_token)])
 async def fail_job(
     job_id: int,
     req: JobFailRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     job = db.query(Job).filter(Job.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job não encontrado.")
         
-    job.attempts += 1
+    job.attempts = (job.attempts or 0) + 1
     job.error_message = req.error_message
     job.locked_by = None
     job.updated_at = datetime.now(timezone.utc)
     
-    if job.attempts >= job.max_attempts:
+    if job.attempts >= (job.max_attempts or 3):
         job.status = "error"
         message_prefix = f"Job {job.id} falhou definitivamente"
     else:
@@ -162,6 +201,23 @@ async def fail_job(
     db.add(log)
     
     db.commit()
+    
+    # Dispatch webhook if webhook_url is specified in params
+    if job.params and isinstance(job.params, dict):
+        webhook_url = job.params.get("webhook_url")
+        if webhook_url:
+            payload = {
+                "job_id": job.id,
+                "status": job.status,
+                "result_data": job.result_data,
+                "error_message": job.error_message,
+                "attempts": job.attempts,
+                "rotina": job.rotina,
+                "id_convenio": job.id_convenio,
+                "params": job.params
+            }
+            background_tasks.add_task(send_webhook_task, webhook_url, payload)
+            
     return {
         "message": f"Falha registrada no Job {job_id}.",
         "attempts": job.attempts,

@@ -6,8 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from database import get_db
-from dependencies import get_current_user
-from models.shared import User
+from dependencies import get_current_user, CurrentUser
 from models.worker import Worker, WorkerServer
 
 router = APIRouter()
@@ -42,7 +41,7 @@ class WorkerServerResponse(BaseModel):
 # --- Endpoints ---
 
 @router.get("/api/v1/workers", response_model=List[WorkerResponse])
-async def list_workers(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def list_workers(db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     # Admin only
     if not current_user.is_admin:
         raise HTTPException(
@@ -56,7 +55,7 @@ async def list_workers(db: Session = Depends(get_db), current_user: User = Depen
 async def restart_worker(
     worker_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: CurrentUser = Depends(get_current_user)
 ):
     # If not admin, verify if user has a server linked to this worker
     if not current_user.is_admin:
@@ -82,7 +81,7 @@ async def restart_worker(
 @router.get("/api/v1/workers/servers", response_model=List[WorkerServerResponse])
 async def list_worker_servers(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: CurrentUser = Depends(get_current_user)
 ):
     query = db.query(WorkerServer)
     if not current_user.is_admin:

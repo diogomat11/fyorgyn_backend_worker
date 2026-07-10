@@ -12,9 +12,9 @@ class Job(Base):
     __table_args__ = {'schema': 'worker', 'extend_existing': True}
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("public.users.id", ondelete="SET NULL"), nullable=True, index=True)
-    carteirinha_id = Column(Integer, ForeignKey("public.carteirinhas.id", ondelete="CASCADE"), nullable=True)
-    id_convenio = Column(Integer, ForeignKey("public.convenios.id_convenio", ondelete="SET NULL"), nullable=True)
+    user_id = Column(Integer, nullable=True, index=True)
+    carteirinha_id = Column(Integer, nullable=True)
+    id_convenio = Column(Integer, nullable=True)
     rotina = Column(Text)  # op0_login, op1_consulta, op2_autorizar, etc.
     params = Column(JSONB, nullable=True)  # Todos os parâmetros para este job em JSON
     result_data = Column(JSONB, nullable=True)  # Resposta JSON do worker
@@ -39,7 +39,7 @@ class Log(Base):
     id = Column(Integer, primary_key=True, index=True)
     job_id = Column(Integer, ForeignKey("worker.jobs.id", ondelete="SET NULL"), nullable=True)
     carteirinha_id = Column(Integer, nullable=True)
-    user_id = Column(Integer, ForeignKey("public.users.id", ondelete="SET NULL"), nullable=True, index=True)
+    user_id = Column(Integer, nullable=True, index=True)
     level = Column(Text, default="INFO")
     message = Column(Text)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -69,7 +69,7 @@ class WorkerServer(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     worker_id = Column(Integer, ForeignKey("worker.workers.id", ondelete="CASCADE"))
-    user_id = Column(Integer, ForeignKey("public.users.id", ondelete="CASCADE"))
+    user_id = Column(Integer, nullable=True)
     server_url = Column(Text, nullable=False)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
