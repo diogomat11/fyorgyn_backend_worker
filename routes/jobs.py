@@ -14,12 +14,21 @@ router = APIRouter()
 
 # --- Pydantic Schemas ---
 class JobCreate(BaseModel):
-    carteirinha_id: Optional[int] = None
-    id_convenio: Optional[int] = None
+    # Campos de rastreamento (opcionais) usados pelo Hub Backend para correlacionar
+    # o resultado do webhook. O Worker NÃO consulta esses IDs em nenhuma tabela.
+    carteirinha_id: Optional[int] = None  # ID da carteirinha no Hub (apenas rastreamento)
+    id_convenio: Optional[int] = None     # ID do convênio no Hub (apenas rastreamento)
+    user_id: Optional[int] = None         # ID do usuário no Hub (opcional)
     rotina: str
     priority: int = 0
-    params: Optional[dict] = None
     max_attempts: int = 3
+    # params é OBRIGATÓRIO e deve conter TODOS os dados operacionais que o Worker precisa:
+    #   - carteirinha: número do cartão (string)
+    #   - login, senha_criptografada: credenciais do portal
+    #   - cod_prestador: código do prestador no convênio
+    #   - e todos os demais dados específicos de cada rotina
+    # O Worker é 100% stateless e não consulta nenhuma tabela do schema public.
+    params: dict  # obrigatório — não pode ser None
 
 class JobBatchCreate(BaseModel):
     jobs: List[JobCreate]
@@ -53,11 +62,19 @@ class JobStats(BaseModel):
     error: int
 
 # --- Helper to create a single job ---
-def _create_job_db(db: Session, job_in: JobCreate, user_id: int) -> Job:
-    p_dict = dict(job_in.params) if job_in.params else {}
+def _create_job_db(db: Session, job_in: JobCreate, fallback_user_id: int) -> Job:
+    if not job_in.params:
+        raise HTTPException(
+            status_code=400,
+            detail="O campo 'params' é obrigatório e não pode estar vazio. "
+                   "Inclua todos os dados operacionais necessários ao Worker (carteirinha, login, senha_criptografada, etc.)."
+        )
+    p_dict = dict(job_in.params)
+
+    effective_user_id = job_in.user_id if job_in.user_id is not None else fallback_user_id
 
     db_job = Job(
-        user_id=user_id,
+        user_id=effective_user_id,
         carteirinha_id=job_in.carteirinha_id,
         id_convenio=job_in.id_convenio,
         rotina=job_in.rotina,
@@ -102,11 +119,11 @@ async def create_jobs_batch(batch_in: JobBatchCreate, db: Session = Depends(get_
         db_job = _create_job_db(db, job_in, current_user.id)
         db_jobs.append(db_job)
     
-    db.commit()
+    # Flush to generate job IDs in the database
+    db.flush()
     
-    # Logs and refresh
+    # Logs
     for db_job in db_jobs:
-        db.refresh(db_job)
         log = Log(
             job_id=db_job.id,
             user_id=current_user.id,

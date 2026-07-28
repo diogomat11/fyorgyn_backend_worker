@@ -123,3 +123,30 @@ class PriorityRule(Base):
     is_active = Column(Integer, default=1)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class WorkerConvenio(Base):
+    __tablename__ = "convenios"
+    __table_args__ = {'schema': 'worker', 'extend_existing': True}
+
+    id = Column(Integer, primary_key=True, index=True)
+    id_convenio = Column(Integer, unique=True, nullable=False, index=True)
+    nome = Column(Text, nullable=False)
+    sigla = Column(Text, nullable=True)
+    ativo = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class WorkerConvenioOperacao(Base):
+    __tablename__ = "convenio_operacoes"
+    __table_args__ = {'schema': 'worker', 'extend_existing': True}
+
+    id = Column(Integer, primary_key=True, index=True)
+    id_convenio = Column(Integer, ForeignKey("worker.convenios.id_convenio", ondelete="CASCADE"), nullable=False)
+    rotina = Column(Text, nullable=False)
+    descricao = Column(Text, nullable=True)
+    ativo = Column(Boolean, default=True)
+    params_schema = Column(JSONB, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
