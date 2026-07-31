@@ -8,3 +8,7 @@ cryptography>=41.0.0
 python-multipart>=0.0.6
 requests>=2.31.0
 pydantic>=2.0.0
+# Scraping CRM medico (CFM nacional) - ver docs/runbook_crm_consulta.md
+undetected-chromedriver>=3.5.5
+selenium>=4.18.0
+
