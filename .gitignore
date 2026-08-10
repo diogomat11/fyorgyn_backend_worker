@@ -7,3 +7,11 @@ venv/
 dist/
 build/
 .pytest_cache/
+
+# Browser/Selenium profile caches (can contain files >100MB)
+scraper/uc_profile_*/
+scraper/chrome_profile*/
+scraper/*/Default/Cache/
+scraper/*/Default/Cache_Data/
+scraper/*/Default/Code Cache/
+scraper/*/Default/GPUCache/

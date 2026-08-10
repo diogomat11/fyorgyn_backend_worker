@@ -254,6 +254,29 @@ async def retry_job(job_id: int, db: Session = Depends(get_db), current_user: Cu
     if job.status not in ["error", "success"]:
         raise HTTPException(status_code=400, detail="Apenas jobs com erro ou sucesso podem ser reprocessados.")
         
+    # Se o job possuir result_data com itens_erro, filtra params["itens"] para apenas os com erro antes de reenviar
+    if job.result_data:
+        res_data = job.result_data or {}
+        data_dict = res_data.get("data") if isinstance(res_data.get("data"), dict) else res_data
+        itens_erro = data_dict.get("itens_erro") if isinstance(data_dict, dict) else None
+        if itens_erro and isinstance(itens_erro, list):
+            try:
+                params_dict = dict(job.params or {})
+                params_dict["itens"] = [
+                    {
+                        "detalheId": item.get("detalheId"),
+                        "status": item.get("status"),
+                        "dataRealizacao": item.get("dataRealizacao"),
+                        "valorProcedimento": item.get("valorProcedimento", "")
+                    }
+                    for item in itens_erro if isinstance(item, dict) and item.get("detalheId")
+                ]
+                job.params = params_dict
+                from sqlalchemy.orm.attributes import flag_modified
+                flag_modified(job, "params")
+            except Exception as prune_e:
+                print(f"Erro ao podar params no retry backend_worker: {prune_e}")
+
     job.status = "pending"
     job.locked_by = None
     job.result_data = None
