@@ -25,10 +25,15 @@ app.add_middleware(
 @app.get("/")
 def health_check():
     return {
-        "status": "ok", 
+        "status": "ok",
         "service": "FyorGyn Worker API",
         "timestamp": datetime.utcnow().isoformat() if "datetime" in globals() else None
     }
+
+@app.get("/health")
+def health_probe():
+    # Endpoint dedicado para o health check do Render.
+    return {"status": "ok"}
 
 # Include routers
 app.include_router(jobs.router, tags=["Jobs"])
