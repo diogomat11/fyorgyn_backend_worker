@@ -1,0 +1,42 @@
+# Blueprint Render - backend_worker (Bridge API) - CONTA B (SEPARADA do backend).
+# Por que conta separada: cada conta Render free tem 750 instance-horas/mes proprias;
+# assim o worker pode ter cron/keep-alive sem competir com o backend.
+# O CFM esta guarded (retorna 503 sem Chrome) - ver DEPLOY.md (Fase 3: migrar p/ Local_worker).
+services:
+  - type: web
+    name: agendahub-backend-worker
+    runtime: python
+    region: ohio            # mesma regiao do backend (conta A) quando possivel
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /
+    autoDeploy: true
+    envVars:
+      # Banco (Postgres/Supabase) - mesmo projeto do hub
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_DB_HOST
+        sync: false
+      - key: SUPABASE_DB_PORT
+        value: "5432"
+      - key: SUPABASE_DB_USER
+        sync: false
+      - key: SUPABASE_DB_NAME
+        sync: false
+      - key: SUPABASE_PASSWORD
+        sync: false
+      # Auth
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_EXPIRATION_HOURS
+        value: "12"
+      - key: FERNET_SECRET
+        sync: false
+      # API / integracoes
+      - key: API_TOKEN
+        sync: false
+      - key: BPO_API_KEY
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
