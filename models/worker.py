@@ -125,28 +125,59 @@ class PriorityRule(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
-class WorkerConvenio(Base):
-    __tablename__ = "convenios"
+class WorkerIntegrador(Base):
+    __tablename__ = "integradores"
     __table_args__ = {'schema': 'worker', 'extend_existing': True}
 
-    id = Column(Integer, primary_key=True, index=True)
-    id_convenio = Column(Integer, unique=True, nullable=False, index=True)
+    id_integrador = Column(Integer, primary_key=True, index=True)
     nome = Column(Text, nullable=False)
     sigla = Column(Text, nullable=True)
+    tipo_operacao = Column(Text, default="convenio")
     ativo = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
-class WorkerConvenioOperacao(Base):
-    __tablename__ = "convenio_operacoes"
+class WorkerIntegradorOperacao(Base):
+    __tablename__ = "integrador_operacoes"
     __table_args__ = {'schema': 'worker', 'extend_existing': True}
 
     id = Column(Integer, primary_key=True, index=True)
-    id_convenio = Column(Integer, ForeignKey("worker.convenios.id_convenio", ondelete="CASCADE"), nullable=False)
+    id_integrador = Column(Integer, ForeignKey("worker.integradores.id_integrador", ondelete="CASCADE"), nullable=False)
     rotina = Column(Text, nullable=False)
     descricao = Column(Text, nullable=True)
+    tipo_processamento = Column(Text, default="local")
     ativo = Column(Boolean, default=True)
     params_schema = Column(JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+# Aliases para retrocompatibilidade
+WorkerConvenio = WorkerIntegrador
+WorkerConvenioOperacao = WorkerIntegradorOperacao
+
+
+class WorkerConfig(Base):
+    __tablename__ = "worker_config"
+    __table_args__ = {'schema': 'worker', 'extend_existing': True}
+
+    id = Column(Integer, primary_key=True, index=True)
+    chave = Column(Text, unique=True, nullable=False)
+    valor = Column(Text, nullable=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class WorkerApiKey(Base):
+    __tablename__ = "worker_api_keys"
+    __table_args__ = {'schema': 'worker', 'extend_existing': True}
+
+    id = Column(Integer, primary_key=True, index=True)
+    api_key = Column(Text, unique=True, nullable=False)
+    user_id = Column(Integer, nullable=False)
+    tipo_processamento = Column(Text, nullable=False, default="local")
+    descricao = Column(Text, nullable=True)
+    ativo = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
 
