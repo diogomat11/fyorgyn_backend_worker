@@ -145,11 +145,22 @@ class WorkerIntegradorOperacao(Base):
     id = Column(Integer, primary_key=True, index=True)
     id_integrador = Column(Integer, ForeignKey("worker.integradores.id_integrador", ondelete="CASCADE"), nullable=False)
     rotina = Column(Text, nullable=False)
+    operacao_canonica = Column(Text, nullable=True)  # migration 0103 — nome canônico cross-integrador
     descricao = Column(Text, nullable=True)
     tipo_processamento = Column(Text, default="local")
     ativo = Column(Boolean, default=True)
+    modo_execucao = Column(Text, default="automatico")  # 'automatico' ou 'manual' (migration 0086)
     params_schema = Column(JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class ConvenioRef(Base):
+    """Leitura de public.convenios (apenas mapeamento convênio→integrador, espaço W)."""
+    __tablename__ = "convenios"
+    __table_args__ = {'schema': 'public', 'extend_existing': True}
+
+    id_convenio = Column(Integer, primary_key=True, index=True)
+    id_integrador = Column(Integer, nullable=True)
 
 
 # Aliases para retrocompatibilidade

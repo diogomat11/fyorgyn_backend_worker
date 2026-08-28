@@ -2,7 +2,7 @@ import os
 from datetime import datetime
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routes import jobs, workers, internal, crm
+from routes import jobs, workers, internal, crm, integradores
 
 app = FastAPI(
     title="FyorGyn Worker API", 
@@ -40,4 +40,5 @@ app.include_router(jobs.router, tags=["Jobs"])
 app.include_router(workers.router, tags=["Workers"])
 app.include_router(internal.router, tags=["Internal"])
 app.include_router(crm.router, tags=["CRM"])
+app.include_router(integradores.router, tags=["Integradores"])
 

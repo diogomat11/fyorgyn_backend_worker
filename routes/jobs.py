@@ -8,7 +8,7 @@ from sqlalchemy import func
 
 from database import get_db
 from dependencies import get_current_user, CurrentUser
-from models.worker import Job, Log
+from models.worker import Job, Log, ConvenioRef, WorkerIntegrador, WorkerIntegradorOperacao
 
 router = APIRouter()
 
@@ -61,6 +61,34 @@ class JobStats(BaseModel):
     success: int
     error: int
 
+# --- Validação de catálogo (camada 2 do bloqueio — plano integradores agendamento) ---
+def _validar_rotina_integrador(db: Session, id_convenio: Optional[int], rotina: str) -> None:
+    """Para integradores tipo 'agendamento': exige rotina registrada e ativa no
+    catálogo worker.integrador_operacoes (422 caso contrário). Integradores tipo
+    'convenio' e convênios sem mapeamento mantêm o comportamento legado (aceitam
+    aliases de rotina não cadastrados)."""
+    if not id_convenio or not rotina:
+        return
+    convenio = db.query(ConvenioRef).filter(ConvenioRef.id_convenio == id_convenio).first()
+    if not convenio or not convenio.id_integrador:
+        return
+    integrador = db.query(WorkerIntegrador).filter(
+        WorkerIntegrador.id_integrador == convenio.id_integrador
+    ).first()
+    if not integrador or integrador.tipo_operacao != "agendamento" or not integrador.ativo:
+        return
+    op = db.query(WorkerIntegradorOperacao).filter(
+        WorkerIntegradorOperacao.id_integrador == convenio.id_integrador,
+        WorkerIntegradorOperacao.rotina == rotina,
+        WorkerIntegradorOperacao.ativo == True  # noqa: E712
+    ).first()
+    if not op:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Rotina '{rotina}' não registrada/ativa para o integrador "
+                   f"{integrador.nome} (id_integrador={integrador.id_integrador})."
+        )
+
 # --- Helper to create a single job ---
 def _create_job_db(db: Session, job_in: JobCreate, fallback_user_id: int) -> Job:
     if not job_in.params:
@@ -69,6 +97,7 @@ def _create_job_db(db: Session, job_in: JobCreate, fallback_user_id: int) -> Job
             detail="O campo 'params' é obrigatório e não pode estar vazio. "
                    "Inclua todos os dados operacionais necessários ao Worker (carteirinha, login, senha_criptografada, etc.)."
         )
+    _validar_rotina_integrador(db, job_in.id_convenio, job_in.rotina)
     p_dict = dict(job_in.params)
 
     effective_user_id = job_in.user_id if job_in.user_id is not None else fallback_user_id
