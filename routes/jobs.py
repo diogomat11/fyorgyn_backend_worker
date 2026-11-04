@@ -90,15 +90,34 @@ def _validar_rotina_integrador(db: Session, id_convenio: Optional[int], rotina: 
         )
 
 # --- Helper to create a single job ---
-def _create_job_db(db: Session, job_in: JobCreate, fallback_user_id: int) -> Job:
+def _create_job_db(db: Session, job_in: JobCreate, fallback_user_id: int,
+                   validacao_ja_feita: bool = False,
+                   integrador_por_convenio: Optional[dict] = None) -> Job:
     if not job_in.params:
         raise HTTPException(
             status_code=400,
             detail="O campo 'params' é obrigatório e não pode estar vazio. "
                    "Inclua todos os dados operacionais necessários ao Worker (carteirinha, login, senha_criptografada, etc.)."
         )
-    _validar_rotina_integrador(db, job_in.id_convenio, job_in.rotina)
+    if not validacao_ja_feita:
+        _validar_rotina_integrador(db, job_in.id_convenio, job_in.rotina)
     p_dict = dict(job_in.params)
+
+    # Ponte hub→worker: garante que todo job leve o seu integrador no envelope
+    # (params["id_integrador"]). O hub já carimba via job_service; aqui completa
+    # paths diretos, resolvendo convenios.id_integrador — o Local_worker usa o
+    # carimbo para despachar o pacote do integrador (ex.: 102-caesan).
+    if not p_dict.get("id_integrador") and job_in.id_convenio:
+        id_integrador = None
+        if integrador_por_convenio is not None and job_in.id_convenio in integrador_por_convenio:
+            # Pré-resolvido em lote (create_jobs_batch) — sem SELECT por job
+            id_integrador = integrador_por_convenio[job_in.id_convenio]
+        else:
+            convenio = db.query(ConvenioRef).filter(ConvenioRef.id_convenio == job_in.id_convenio).first()
+            if convenio and convenio.id_integrador:
+                id_integrador = convenio.id_integrador
+        if id_integrador:
+            p_dict["id_integrador"] = id_integrador
 
     effective_user_id = job_in.user_id if job_in.user_id is not None else fallback_user_id
 
@@ -141,13 +160,33 @@ async def create_job(job_in: JobCreate, db: Session = Depends(get_db), current_u
 @router.post("/api/v1/jobs/batch", response_model=List[JobResponse], status_code=status.HTTP_201_CREATED)
 async def create_jobs_batch(batch_in: JobBatchCreate, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     if not batch_in.jobs:
-        raise HTTPException(status_code=400, detail="A lista de jobs não pode estar vazia.")
-    
+        raise HTTPException(status_code=400, detail="A lista de jobs não pode ser vazia.")
+
+    # Pré-resolução em lote: valida o catálogo uma vez por par convênio+rotina e
+    # resolve o id_integrador uma vez por convênio. Antes cada job fazia 3-4
+    # SELECTs no Supabase (~5k round-trips WAN para lotes de 1.4k guias do
+    # Fature — minutos de processamento e timeout no hub).
+    pares_validados = set()
+    integrador_por_convenio = {}
+    for job_in in batch_in.jobs:
+        par = (job_in.id_convenio, job_in.rotina)
+        if par not in pares_validados:
+            _validar_rotina_integrador(db, job_in.id_convenio, job_in.rotina)
+            pares_validados.add(par)
+        cid = job_in.id_convenio
+        if cid and cid not in integrador_por_convenio:
+            convenio = db.query(ConvenioRef).filter(ConvenioRef.id_convenio == cid).first()
+            integrador_por_convenio[cid] = convenio.id_integrador if convenio else None
+
     db_jobs = []
     for job_in in batch_in.jobs:
-        db_job = _create_job_db(db, job_in, current_user.id)
+        db_job = _create_job_db(
+            db, job_in, current_user.id,
+            validacao_ja_feita=True,
+            integrador_por_convenio=integrador_por_convenio
+        )
         db_jobs.append(db_job)
-    
+
     # Flush to generate job IDs in the database
     db.flush()
     
